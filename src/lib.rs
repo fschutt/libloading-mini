@@ -1,8 +1,8 @@
 #[cfg(unix)] mod internal_impl {
     // Platform specific things
     use std::os::raw;
-    use std::ffi::{CStr, CString};
-    use std::borrow::Cow;
+    use std::ffi::OsStr;
+    use super::cstr_cow_from_bytes;
 
     extern { // syscalls
         fn dlopen(filename: *const raw::c_char, flags: raw::c_int) -> *mut raw::c_void;
@@ -22,8 +22,8 @@
     unsafe impl Sync for Library {}
 
     impl Library {
-        pub fn new(path: &str) -> Option<Self> {
-            let file_path = cstr_cow_from_bytes(path.as_bytes())?;
+        pub fn new<P: AsRef<OsStr>>(path: P) -> Option<Self> {
+            let file_path = cstr_cow_from_bytes(path.as_ref().as_bytes())?;
             let result = unsafe { dlopen(file_path.as_ptr(), RTLD_NOW) };
             if result.is_null() { None } else { Some(Library(result)) }
         }
@@ -33,20 +33,6 @@
             let symbol = unsafe { dlsym(self.0, symbol.as_ptr()) };
             if symbol.is_null() { None } else { Some(symbol) }
         }
-    }
-
-    fn cstr_cow_from_bytes<'a>(slice: &'a [u8]) -> Option<Cow<'a, CStr>> {
-        static ZERO: raw::c_char = 0;
-        Some(match slice.last() {
-            // Slice out of 0 elements
-            None => unsafe { Cow::Borrowed(CStr::from_ptr(&ZERO)) },
-            // Slice with trailing 0
-            Some(&0) => {
-                Cow::Borrowed(CStr::from_bytes_with_nul(slice).ok()?)
-            },
-            // Slice with no trailing 0
-            Some(_) => Cow::Owned(CString::new(slice).ok()?),
-        })
     }
 
     impl Drop for Library {
@@ -60,21 +46,25 @@
 
     extern crate winapi;
 
-    use winapi::shared::minwindef::{HMODULE, FARPROC};
-    use winapi::um::libloaderapi;
+    use self::winapi::shared::minwindef::{HMODULE, FARPROC};
+    use self::winapi::um::libloaderapi;
+    use super::cstr_cow_from_bytes;
+    use std::ffi::OsStr;
 
     pub struct Library(HMODULE);
 
     unsafe impl Send for Library {}
     unsafe impl Sync for Library {}
 
-    impl Libary {
-        pub fn new(path: &str) -> Option<Self> {
-            let wide_filename: Vec<u16> = filename.encode_wide().chain(Some(0)).collect();
+    impl Library {
+        pub fn new<P: AsRef<OsStr>>(path: P) -> Option<Self> {
+            use std::os::windows::ffi::OsStrExt;
+            let wide_filename: Vec<u16> = path.as_ref().encode_wide().chain(Some(0)).collect();
             let handle = unsafe { libloaderapi::LoadLibraryExW(wide_filename.as_ptr(), std::ptr::null_mut(), 0) };
             if handle.is_null()  { None } else { Some(Library(handle)) }
         }
-        pub fn get(&self, symbol: &[u8]) -> Option<FARBPROC> {
+        pub fn get(&self, symbol: &[u8]) -> Option<FARPROC> {
+            let symbol = cstr_cow_from_bytes(symbol)?;
             let symbol = unsafe { libloaderapi::GetProcAddress(self.0, symbol.as_ptr()) };
             if symbol.is_null() { None } else { Some(symbol) }
         }
@@ -85,6 +75,24 @@
             unsafe { libloaderapi::FreeLibrary(self.0); }
         }
     }
+}
+
+use std::ffi::{CStr, CString};
+use std::borrow::Cow;
+use std::os::raw;
+
+pub(crate) fn cstr_cow_from_bytes<'a>(slice: &'a [u8]) -> Option<Cow<'a, CStr>> {
+    static ZERO: raw::c_char = 0;
+    Some(match slice.last() {
+        // Slice out of 0 elements
+        None => unsafe { Cow::Borrowed(CStr::from_ptr(&ZERO)) },
+        // Slice with trailing 0
+        Some(&0) => {
+            Cow::Borrowed(CStr::from_bytes_with_nul(slice).ok()?)
+        },
+        // Slice with no trailing 0
+        Some(_) => Cow::Owned(CString::new(slice).ok()?),
+    })
 }
 
 pub use internal_impl::Library;
