@@ -23,6 +23,7 @@
 
     impl Library {
         pub fn new<P: AsRef<OsStr>>(path: P) -> Option<Self> {
+            use std::os::unix::ffi::OsStrExt;
             let file_path = cstr_cow_from_bytes(path.as_ref().as_bytes())?;
             let result = unsafe { dlopen(file_path.as_ptr(), RTLD_NOW) };
             if result.is_null() { None } else { Some(Library(result)) }
