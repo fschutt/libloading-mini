@@ -11,3 +11,7 @@ repository = "https://github.com/fschutt/libloading-mini/"
 [target."cfg(windows)".dependencies.winapi]
 features = ["winerror", "errhandlingapi", "libloaderapi"]
 version = "0.3"
+
+[features]
+default = []
+debug_symbols = []

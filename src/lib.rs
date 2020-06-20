@@ -8,6 +8,7 @@
         fn dlopen(filename: *const raw::c_char, flags: raw::c_int) -> *mut raw::c_void;
         fn dlsym(handle: *mut raw::c_void, symbol: *const raw::c_char) -> *mut raw::c_void;
         fn dlclose(handle: *mut raw::c_void) -> raw::c_int;
+        fn dlerror() -> *mut raw::c_char;
     }
 
     #[cfg(not(target_os="android"))]
@@ -26,13 +27,34 @@
             use std::os::unix::ffi::OsStrExt;
             let file_path = cstr_cow_from_bytes(path.as_ref().as_bytes())?;
             let result = unsafe { dlopen(file_path.as_ptr(), RTLD_NOW) };
-            if result.is_null() { None } else { Some(Library(result)) }
+            if result.is_null() {
+                #[cfg(feature = "debug_symbols")] {
+                    println!("failed to dlopen library in path {}", path.as_ref().to_string_lossy());
+                }
+                None
+            } else {
+                #[cfg(feature = "debug_symbols")] {
+                    println!("dlopen library in path {} @ 0x{:x}", path.as_ref().to_string_lossy(), result as usize);
+                }
+                Some(Library(result))
+            }
         }
 
         pub fn get(&self, symbol: &[u8]) -> Option<*mut raw::c_void> {
-            let symbol = cstr_cow_from_bytes(symbol)?;
-            let symbol = unsafe { dlsym(self.0, symbol.as_ptr()) };
-            if symbol.is_null() { None } else { Some(symbol) }
+            let symbol_name_new = cstr_cow_from_bytes(symbol)?;
+            let symbol_new = unsafe { dlsym(self.0, symbol_name_new.as_ptr()) };
+            let error = unsafe { dlerror() };
+            if error.is_null() {
+                #[cfg(feature = "debug_symbols")] {
+                    println!("ok loaded symbol {} @ 0x{:x}", unsafe { std::str::from_utf8_unchecked(symbol) }, symbol_new as usize);
+                }
+                Some(symbol_new)
+            } else {
+                #[cfg(feature = "debug_symbols")] {
+                    println!("missing symbol {} @ 0x{:x}", unsafe { std::str::from_utf8_unchecked(symbol) }, symbol_new as usize);
+                }
+                None
+            }
         }
     }
 
