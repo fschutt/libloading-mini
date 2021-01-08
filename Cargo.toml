@@ -1,6 +1,6 @@
 [package]
 name = "libloading-mini"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Felix Schütt <felix.schuett@maps4print.com>"]
 build = "build.rs"
 description = "Raw bindings to libloading, does NOT use generics (useful for loading large amounts of function pointers)"
@@ -9,6 +9,7 @@ license = "ISC"
 repository = "https://github.com/fschutt/libloading-mini/"
 
 [target."cfg(windows)".dependencies.winapi]
+default-features = false
 features = ["winerror", "errhandlingapi", "libloaderapi"]
 version = "0.3"
 
